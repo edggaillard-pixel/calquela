@@ -1,0 +1,18 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend
+backend/.gradle/
+backend/build/
+backend/data/
+*.class
+
+# Éditeurs / systèmes
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# GROGNON

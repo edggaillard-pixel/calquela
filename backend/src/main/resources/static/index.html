@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CalqueLa – essayez votre tatouage en 3D</title>
+    <meta name="description" content="Créez un avatar 3D à votre morphologie et essayez vos tatouages avant de passer sous l'aiguille." />
+    <meta name="theme-color" content="#f1f1ee" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="./assets/index--DqUfGJT.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D4ZNcqSg.css">
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="CalqueLa, accueil">
+          <span class="brand__word">Calque<span class="brand__la">La</span></span>
+        </a>
+        <input id="project-name" class="project-name" type="text" maxlength="80" aria-label="Nom du projet" value="Sans titre" />
+        <div class="topbar__history" id="history-buttons"></div>
+        <nav class="topbar__actions" id="file-actions" aria-label="Fichier"></nav>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar sheet" aria-label="Réglages">
+          <div class="tabs" role="tablist" id="tabs"></div>
+          <div class="sidebar__panels" id="panels"></div>
+        </aside>
+
+        <main class="viewport" id="viewport" aria-label="Avatar 3D">
+          <div class="viewport__hint" id="hint" hidden></div>
+          <div class="views" id="views" role="group" aria-label="Points de vue"></div>
+          <div class="loader" id="loader" role="status">
+            <div class="loader__trace" aria-hidden="true"></div>
+            <p id="loader-text">Préparation de l’atelier…</p>
+          </div>
+        </main>
+
+        <div id="inspector-slot"></div>
+      </div>
+
+      <div class="dropzone" id="dropzone" hidden>
+        <p>Déposez l’image du motif</p>
+      </div>
+    </div>
+  </body>
+</html>
+<!-- GROGNON -->
