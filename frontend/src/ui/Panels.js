@@ -102,7 +102,7 @@ export function posePanel(app) {
 
   /** Curseur relié à un chemin dans la pose ; côté miroir si symétrie. */
   const bind = (label, path, min, max) => {
-    const get = (p) => path.reduce((o, k) => o[k], p);
+    const get = (p) => path.reduce((o, k) => (o == null ? undefined : o[k]), p) ?? 0;
     const setIn = (p, pth, v) => {
       let o = p;
       for (let i = 0; i < pth.length - 1; i++) o = o[pth[i]];
@@ -128,10 +128,12 @@ export function posePanel(app) {
       el('h4', { class: 'sub' }, 'Bras gauche'),
       bind('Écarter', ['armL', 'raise'], 0, 180),
       bind('Avant / arrière', ['armL', 'forward'], -60, 120),
+      bind('Tourner le bras', ['armL', 'twist'], -100, 100),
       bind('Plier le coude', ['elbowL'], 0, 150),
       el('h4', { class: 'sub' }, 'Bras droit'),
       bind('Écarter', ['armR', 'raise'], 0, 180),
       bind('Avant / arrière', ['armR', 'forward'], -60, 120),
+      bind('Tourner le bras', ['armR', 'twist'], -100, 100),
       bind('Plier le coude', ['elbowR'], 0, 150),
     ),
     section('Jambes',

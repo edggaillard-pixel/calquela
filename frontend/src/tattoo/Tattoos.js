@@ -175,7 +175,7 @@ export function localCoords(frame, p, n, region) {
   } else {
     const d = p.clone().sub(frame.center);
     if (Math.abs(d.dot(frame.N)) > frame.depth) return null;
-    if (n.dot(frame.N) < -0.05) return null;
+    if (n.dot(frame.N) < 0.06) return null;
     u = d.dot(frame.T) / frame.width + 0.5;
     v = d.dot(frame.B) / frame.height + 0.5;
   }

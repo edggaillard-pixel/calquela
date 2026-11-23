@@ -8,8 +8,8 @@ import * as THREE from 'three';
  *  - jambe.ecart : écartement sur le côté, jambe.avant : levée vers l'avant
  */
 export const DEFAULT_POSE = {
-  armL: { raise: 12, forward: 0 },
-  armR: { raise: 12, forward: 0 },
+  armL: { raise: 12, forward: 0, twist: 0 },
+  armR: { raise: 12, forward: 0, twist: 0 },
   elbowL: 12,
   elbowR: 12,
   legL: { side: 4, forward: 0 },
@@ -25,34 +25,34 @@ export const POSE_PRESETS = [
   {
     id: 'apose',
     label: 'Pose A',
-    pose: { ...DEFAULT_POSE, armL: { raise: 45, forward: 0 }, armR: { raise: 45, forward: 0 }, elbowL: 0, elbowR: 0, legL: { side: 8, forward: 0 }, legR: { side: 8, forward: 0 } },
+    pose: { ...DEFAULT_POSE, armL: { raise: 45, forward: 0, twist: 0 }, armR: { raise: 45, forward: 0, twist: 0 }, elbowL: 0, elbowR: 0, legL: { side: 8, forward: 0 }, legR: { side: 8, forward: 0 } },
   },
   {
     id: 'tpose',
     label: 'Bras en croix',
-    pose: { ...DEFAULT_POSE, armL: { raise: 90, forward: 0 }, armR: { raise: 90, forward: 0 }, elbowL: 0, elbowR: 0 },
+    pose: { ...DEFAULT_POSE, armL: { raise: 90, forward: 0, twist: 0 }, armR: { raise: 90, forward: 0, twist: 0 }, elbowL: 0, elbowR: 0 },
   },
   {
     id: 'haut',
     label: 'Bras levés',
-    pose: { ...DEFAULT_POSE, armL: { raise: 165, forward: 0 }, armR: { raise: 165, forward: 0 }, elbowL: 10, elbowR: 10 },
+    pose: { ...DEFAULT_POSE, armL: { raise: 165, forward: 0, twist: 0 }, armR: { raise: 165, forward: 0, twist: 0 }, elbowL: 10, elbowR: 10 },
   },
   {
     id: 'biceps',
     label: 'Biceps',
-    pose: { ...DEFAULT_POSE, armL: { raise: 90, forward: 0 }, armR: { raise: 90, forward: 0 }, elbowL: 110, elbowR: 110 },
+    pose: { ...DEFAULT_POSE, armL: { raise: 90, forward: 0, twist: -90 }, armR: { raise: 90, forward: 0, twist: -90 }, elbowL: 110, elbowR: 110 },
   },
   {
     id: 'hanches',
     label: 'Mains aux hanches',
-    pose: { ...DEFAULT_POSE, armL: { raise: 40, forward: -10 }, armR: { raise: 40, forward: -10 }, elbowL: 95, elbowR: 95 },
+    pose: { ...DEFAULT_POSE, armL: { raise: 40, forward: -10, twist: 90 }, armR: { raise: 40, forward: -10, twist: 90 }, elbowL: 95, elbowR: 95 },
   },
   {
     id: 'marche',
     label: 'Marche',
     pose: {
       ...DEFAULT_POSE,
-      armL: { raise: 10, forward: -22 }, armR: { raise: 10, forward: 22 }, elbowL: 15, elbowR: 30,
+      armL: { raise: 10, forward: -22, twist: 0 }, armR: { raise: 10, forward: 22, twist: 0 }, elbowL: 15, elbowR: 30,
       legL: { side: 3, forward: 25 }, legR: { side: 3, forward: -15 }, kneeL: 15, kneeR: 30,
     },
   },
@@ -109,7 +109,10 @@ export function computePoseQuaternions(avatar, pose) {
     const qRaise = new THREE.Quaternion().setFromAxisAngle(Z, (arm.raise - rest) * DEG * outward);
     const d1 = d.clone().applyQuaternion(qRaise);
     const qFwd = rotateToward(d1, Z, arm.forward);
-    out['upperarm01.' + side] = qFwd.multiply(qRaise);
+    // rotation du bras sur lui-même : oriente le pli du coude
+    const d2 = d1.clone().applyQuaternion(qFwd);
+    const qTwist = new THREE.Quaternion().setFromAxisAngle(d2, (arm.twist || 0) * DEG * outward);
+    out['upperarm01.' + side] = qTwist.multiply(qFwd).multiply(qRaise);
 
     // Coude : rotation dans le plan du pli existant
     const restBend = bendAngle(d, f);

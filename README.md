@@ -2,6 +2,12 @@
 
 Essayez un tatouage avant de passer sous l'aiguille. CalqueLa est une application web qui crée un avatar 3D à votre morphologie, puis y applique des motifs importés depuis le dessin d'un artiste.
 
+**[Essayer la démo en ligne](https://edggaillard-pixel.github.io/calquela/)**
+
+![Avatar vu de dos avec un tatouage](docs/screenshots/avatar-tatouage-dos.png)
+
+![Fenêtre d'import : le fond du dessin est retiré automatiquement](docs/screenshots/import-motif.png)
+
 ## Fonctionnalités
 
 - **Avatar 3D réaliste** : homme ou femme, avec des curseurs pour la taille, la corpulence, la musculature, les proportions et la poitrine. On peut aussi choisir le teint et la couleur des sous-vêtements.

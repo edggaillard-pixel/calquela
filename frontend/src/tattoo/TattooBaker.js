@@ -59,7 +59,8 @@ void main() {
     float depth = dot(d, uN);
     if (abs(depth) > uDepth) discard;
     float facing = dot(normalize(vN), uN);
-    weight = smoothstep(-0.05, 0.25, facing);
+    // la peau qui se détourne du motif ne reçoit pas d'encre (évite les traînées sur les flancs)
+    weight = smoothstep(0.06, 0.32, facing);
     uv = vec2(dot(d, uT) / uSize.x, dot(d, uB) / uSize.y) + 0.5;
   } else {
     if (((uRegionMask >> vRegion) & 1) == 0) discard;
