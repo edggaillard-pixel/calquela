@@ -75,6 +75,22 @@ export class Avatar {
     this.group.add(this.body, this.eyes, this.briefs, this.top);
     this.skinnedMeshes = [this.body, this.eyes, this.briefs, this.top];
     for (const m of this.skinnedMeshes) m.bind(this.skeleton);
+    this.proxyMeshes = {};
+    this.textureLoader = new THREE.TextureLoader();
+    this._textures = {};
+
+    // sourcils et cils : vrais modèles avec texture transparente
+    this.eyebrowMaterial = new THREE.MeshStandardMaterial({
+      map: this.loadTexture(data.proxies.eyebrows?.texture), color: 0x2a1d16, roughness: 0.9,
+      transparent: true, depthWrite: false, alphaTest: 0.01, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
+    this.eyelashMaterial = new THREE.MeshStandardMaterial({
+      map: this.loadTexture(data.proxies.eyelashes?.texture), color: 0x15100d, roughness: 0.8,
+      transparent: true, depthWrite: false, alphaTest: 0.01, side: THREE.DoubleSide,
+    });
+    if (data.proxies.eyebrows) this.getProxyMesh('eyebrows', this.eyebrowMaterial);
+    if (data.proxies.eyelashes) this.getProxyMesh('eyelashes', this.eyelashMaterial);
 
     // Maillage de sélection (positions posées calculées sur le processeur)
     this.pickGeometry = new THREE.BufferGeometry();
@@ -327,9 +343,104 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
 
     this.top.visible = this.shape.gender === 'female';
     this._fitEyes();
+    this._fitProxies();
+    if (this.skinTone) this.setSkin(this.skinTone);
     this._updateJoints();
     this._rebind();
     this._emit('shape');
+  }
+
+  /** Texture partagée (chargée une seule fois). */
+  loadTexture(url, srgb = true) {
+    if (!url) return null;
+    if (!this._textures[url]) {
+      const t = this.textureLoader.load('./avatar/' + url);
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      t.anisotropy = 8;
+      this._textures[url] = t;
+    }
+    return this._textures[url];
+  }
+
+  /**
+   * Maillage d'un vrai modèle (cheveux, sourcils, cils), créé à la première
+   * demande puis réajusté à chaque changement de morphologie.
+   */
+  getProxyMesh(id, material) {
+    if (this.proxyMeshes[id]) return this.proxyMeshes[id];
+    const p = this.data.proxies[id];
+    if (!p) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p.count * 3), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(p.uv, 2));
+    g.setAttribute('skinIndex', new THREE.Uint8BufferAttribute(p.skinIndex, 4));
+    g.setAttribute('skinWeight', new THREE.Uint8BufferAttribute(p.skinWeight, 4, true));
+    g.setIndex(new THREE.BufferAttribute(p.index, 1));
+    const m = new THREE.SkinnedMesh(g, material);
+    m.name = id;
+    m.frustumCulled = false;
+    m.castShadow = p.kind === 'hair';
+    this.group.add(m);
+    this.group.updateMatrixWorld(true);
+    m.bind(this.skeleton, this.body.bindMatrix);
+    this.skinnedMeshes.push(m);
+    this.proxyMeshes[id] = m;
+    this._fitProxy(id);
+    return m;
+  }
+
+  _fitProxy(id) {
+    const p = this.data.proxies[id];
+    const m = this.proxyMeshes[id];
+    const pos = this.cpuPos;
+    const out = m.geometry.attributes.position.array;
+    const scale = p.scales.map(([a, b, den], k) => Math.abs(pos[a * 3 + k] - pos[b * 3 + k]) / den);
+    for (let i = 0; i < p.count; i++) {
+      for (let k = 0; k < 3; k++) {
+        let v = 0;
+        for (let j = 0; j < 3; j++) v += p.weights[i * 3 + j] * pos[p.refs[i * 3 + j] * 3 + k];
+        out[i * 3 + k] = v + p.offsets[i * 3 + k] * scale[k];
+      }
+    }
+    m.geometry.attributes.position.needsUpdate = true;
+    m.geometry.computeVertexNormals();
+    m.geometry.computeBoundingSphere();
+  }
+
+  _fitProxies() {
+    if (!this.proxyMeshes) return;
+    for (const id of Object.keys(this.proxyMeshes)) this._fitProxy(id);
+  }
+
+  /**
+   * Peau photographique : la texture la plus proche du teint choisi
+   * (claire, mate ou foncée, homme ou femme), corrigée vers ce teint exact.
+   */
+  setSkin(hex) {
+    this.skinTone = hex;
+    const target = new THREE.Color(hex); // linéaire
+    const srgb = new THREE.Color(hex).convertLinearToSRGB();
+    const lum = 0.299 * srgb.r + 0.587 * srgb.g + 0.114 * srgb.b;
+    const tone = lum > 0.66 ? 'light' : lum > 0.5 ? 'medium' : 'dark';
+    const sid = `${this.shape.gender === 'male' ? 'male' : 'female'}-${tone}`;
+    const skin = this.data.skins[sid];
+    const mat = this.skinMaterial;
+    if (!skin) {
+      mat.map = null;
+      mat.color.copy(target);
+      mat.needsUpdate = true;
+      return;
+    }
+    const map = this.loadTexture(skin.file);
+    if (mat.map !== map) {
+      mat.map = map;
+      mat.needsUpdate = true;
+    }
+    // facteur de correction : teint demandé / teint moyen de la photo
+    const mean = new THREE.Color().setRGB(...skin.mean, THREE.SRGBColorSpace);
+    const clamp = (v) => Math.min(1.8, Math.max(0.45, v));
+    mat.color.setRGB(clamp(target.r / mean.r), clamp(target.g / mean.g), clamp(target.b / mean.b));
+    mat.userData.uniforms.uTextured.value = 1;
   }
 
   _fitEyes() {

@@ -1,6 +1,6 @@
 import { el, icon, iconButton, section, segmented, slider, swatches, toggle } from './controls.js';
 import { SKIN_TONES, UNDERWEAR_COLORS } from '../state/Project.js';
-import { HAIR_COLORS, HAIR_STYLES } from '../hair/Hair.js';
+import { HAIR_COLORS, HAIR_STYLES, Hair } from '../hair/Hair.js';
 import { POSE_PRESETS, clonePose } from '../avatar/Pose.js';
 
 const pct = (v) => `${Math.round(v * 100)} %`;
@@ -65,27 +65,14 @@ export function hairPanel(app) {
   );
   styles.append(...styleButtons);
   const colors = swatches({ label: 'Couleur', colors: HAIR_COLORS, value: h().color, onChange: (hex) => app.setHair({ color: hex }) });
-  const length = slider({
-    label: 'Longueur',
-    min: 0.6,
-    max: 1.4,
-    value: h().length,
-    format: words('Plus courts', 'Normale', 'Plus longs'),
-    onCommit: (v) => app.setHair({ length: v }),
-  });
-  const fringe = toggle({ label: 'Frange', value: h().fringe, onChange: (v) => app.setHair({ fringe: v }) });
   const root = el('div', { class: 'panel-body' },
-    section('Coupe', styles, el('div', { class: 'stack' }, length, fringe)),
+    section('Coupe', styles),
     section('Couleur', colors),
-    el('p', { class: 'hint' }, 'Les cheveux sont générés mèche par mèche : un changement de coupe prend un court instant.'),
   );
   root.sync = () => {
-    styleButtons.forEach((b, i) => b.setAttribute('aria-checked', String(HAIR_STYLES[i].id === h().style)));
+    const current = Hair.resolve(h().style).id;
+    styleButtons.forEach((b, i) => b.setAttribute('aria-checked', String(HAIR_STYLES[i].id === current)));
     colors.set(h().color);
-    length.set(h().length);
-    fringe.set(h().fringe);
-    length.hidden = !['carre', 'long', 'boucles'].includes(h().style);
-    fringe.hidden = !['carre', 'long'].includes(h().style);
   };
   return root;
 }

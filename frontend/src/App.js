@@ -79,7 +79,7 @@ export class App {
   _applyAvatar() {
     const a = this.state.avatar;
     this.avatar.setShape({ gender: a.gender, height: a.height, weight: a.weight, muscle: a.muscle, proportions: a.proportions, breast: a.breast });
-    this.avatar.skinMaterial.color.set(a.skin);
+    this.avatar.setSkin(a.skin);
     this.avatar.setUnderwearColor(a.underwear);
   }
 
@@ -87,7 +87,7 @@ export class App {
   setAvatar(patch, live = false) {
     const genderChanged = patch.gender && patch.gender !== this.state.avatar.gender;
     Object.assign(this.state.avatar, patch);
-    if ('skin' in patch) this.avatar.skinMaterial.color.set(patch.skin);
+    if ('skin' in patch) this.avatar.setSkin(patch.skin);
     if ('underwear' in patch) this.avatar.setUnderwearColor(patch.underwear);
     const shapeKeys = ['gender', 'height', 'weight', 'muscle', 'proportions', 'breast'];
     if (shapeKeys.some((k) => k in patch)) {

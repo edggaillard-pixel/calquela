@@ -78,7 +78,7 @@ export function createSkinMaterial({ tattooMap, overlayMap }) {
     sheenColor: new THREE.Color('#ffc9b8'),
     specularIntensity: 0.55,
     normalMap: makePoreNormalMap(),
-    normalScale: new THREE.Vector2(0.18, 0.18),
+    normalScale: new THREE.Vector2(0.12, 0.12),
   });
 
   const uniforms = {
@@ -90,6 +90,7 @@ export function createSkinMaterial({ tattooMap, overlayMap }) {
     uScalp: { value: 0.0 },
     uOverlayColor: { value: new THREE.Color('#6b45ff') },
     uInk: { value: 0.94 },
+    uTextured: { value: 0 },
   };
   mat.userData.uniforms = uniforms;
 
@@ -116,6 +117,7 @@ uniform vec3 uHair;
 uniform float uScalp;
 uniform vec3 uOverlayColor;
 uniform float uInk;
+uniform float uTextured;
 varying vec4 vFeatures;
 varying vec2 vSkinUv;
 float cqHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -134,14 +136,13 @@ void main() {`,
   // légères variations de teint
   float n1 = cqNoise(vSkinUv * 38.0);
   float n2 = cqNoise(vSkinUv * 160.0);
-  skin *= 0.95 + 0.07 * n1 + 0.03 * n2;
-  skin = mix(skin, skin * vec3(1.02, 0.93, 0.92), 0.25 * smoothstep(0.55, 0.9, n1));
-  // lèvres, aréoles
-  skin = mix(skin, uLip * (skin / max(dot(skin, vec3(0.333)), 0.05)) * 0.55 + uLip * 0.45, vFeatures.r * 0.8);
-  skin = mix(skin, skin * vec3(0.7, 0.54, 0.5), vFeatures.b * 0.75);
-  // sourcils : brins orientés
-  float strand = smoothstep(0.35, 0.95, cqNoise(vec2(vSkinUv.x * 2600.0, vSkinUv.y * 300.0)));
-  skin = mix(skin, uBrow, vFeatures.g * (0.5 + 0.45 * strand));
+  // sans photo de peau : variations de teint, lèvres et aréoles dessinées
+  // (la photo, quand elle est chargée, contient déjà tous ces détails)
+  float procedural = 1.0 - uTextured;
+  skin *= mix(1.0, 0.95 + 0.07 * n1 + 0.03 * n2, procedural);
+  skin = mix(skin, skin * vec3(1.02, 0.93, 0.92), 0.25 * smoothstep(0.55, 0.9, n1) * procedural);
+  skin = mix(skin, uLip * (skin / max(dot(skin, vec3(0.333)), 0.05)) * 0.55 + uLip * 0.45, vFeatures.r * 0.8 * procedural);
+  skin = mix(skin, skin * vec3(0.7, 0.54, 0.5), vFeatures.b * 0.75 * procedural);
   // cuir chevelu (cheveux très courts / racines)
   float stubble = 0.65 + 0.35 * cqNoise(vSkinUv * 2200.0);
   skin = mix(skin, uHair * stubble, vFeatures.a * uScalp);

@@ -11,7 +11,8 @@ Essayez un tatouage avant de passer sous l'aiguille. CalqueLa est une applicatio
 ## Fonctionnalités
 
 - **Avatar 3D réaliste** : homme ou femme, avec des curseurs pour la taille, la corpulence, la musculature, les proportions et la poitrine. On peut aussi choisir le teint et la couleur des sous-vêtements.
-- **Cheveux** : 8 coupes (rasé, court, carré, longs, queue de cheval, chignon, bouclés), générées mèche par mèche. Couleur, longueur et frange sont réglables.
+- **Peau et visage réalistes** : textures de peau photographiques (homme et femme, trois carnations, ajustées au teint choisi), vrais sourcils et cils modélisés.
+- **Cheveux** : 9 coupes modélisées (très court, court, mi-court, carré, longs, queue de cheval, tresse, afro, rasé), ajustées au crâne et teintables dans n'importe quelle couleur.
 - **Poses** : bras, coudes, jambes, genoux, tête et buste, avec des poses rapides (bras levés, biceps, marche…).
 - **Import de motifs** : le fond (papier, éclairage inégal) est retiré automatiquement. On garde toutes les couleurs ou seulement le trait noir, les petites taches sont nettoyées, puis on retouche à la gomme.
 - **Pose sur la peau** : le motif est peint dans la texture de la peau.
@@ -97,10 +98,13 @@ Réglages dans `backend/src/main/resources/application.properties` (préfixe `ca
 
 ## Données et licences
 
-- Corps, morphologies, squelette et yeux : données de [MakeHuman](https://www.makehumancommunity.org), publiées en **CC0**. Seules ces données sont utilisées, pas le code de MakeHuman (AGPL). Pour les régénérer :
+- Corps, morphologies, squelette et yeux : données de [MakeHuman](https://www.makehumancommunity.org), publiées en **CC0**. Seules ces données sont utilisées, pas le code de MakeHuman (AGPL).
+- Cheveux, sourcils, cils et textures de peau : pack [« MakeHuman system assets »](https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html), **CC0**.
+- Pour régénérer l'avatar :
   ```bash
   git clone --depth 1 https://github.com/makehumancommunity/makehuman
-  python3 tools/build_avatar.py --mh makehuman/makehuman/data
+  # + télécharger et dézipper le pack « MakeHuman system assets »
+  python3 tools/build_avatar.py --mh makehuman/makehuman/data --assets chemin/vers/le/pack
   ```
 - [Three.js](https://threejs.org) et [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) : licence MIT.
 - Les motifs importés restent la propriété de leurs auteurs. Demandez l'accord de l'artiste avant de partager un projet qui contient son dessin.

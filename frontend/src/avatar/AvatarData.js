@@ -54,6 +54,12 @@ export async function loadAvatarData(baseUrl = './avatar/') {
       index: section('eyeIndex'),
       side: section('eyeSide'),
     },
+    // vrais modèles 3D (cheveux, sourcils, cils), ajustés au corps comme les yeux
+    proxies: Object.fromEntries(Object.entries(meta.proxies || {}).map(([id, p]) => {
+      const sec = (k) => section(`p_${id}_${k}`);
+      return [id, { ...p, id, refs: sec('refs'), weights: sec('w'), offsets: sec('off'), uv: sec('uv'), index: sec('index'), skinIndex: sec('si'), skinWeight: sec('sw') }];
+    })),
+    skins: meta.skins || {},
     bones: meta.bones,
     jointNames: meta.jointNames,
     targets: meta.targets.map((t) => ({

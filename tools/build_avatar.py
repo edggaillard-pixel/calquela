@@ -23,9 +23,32 @@ import re
 import struct
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 AGE = "young"
+
+# Modèles du pack « MakeHuman system assets » (CC0) : (identifiant, type, dossier)
+PROXIES = [
+    ("eyebrows", "eyebrows", "eyebrows/eyebrow001"),
+    ("eyelashes", "eyelashes", "eyelashes/eyelashes01"),
+    ("short04", "hair", "hair/short04"),
+    ("short02", "hair", "hair/short02"),
+    ("short03", "hair", "hair/short03"),
+    ("bob01", "hair", "hair/bob01"),
+    ("long01", "hair", "hair/long01"),
+    ("ponytail01", "hair", "hair/ponytail01"),
+    ("braid01", "hair", "hair/braid01"),
+    ("afro01", "hair", "hair/afro01"),
+]
+# Textures de peau photographiques (CC0)
+SKINS = [
+    ("female-light", "young_caucasian_female"),
+    ("female-medium", "young_asian_female"),
+    ("female-dark", "young_african_female"),
+    ("male-light", "young_caucasian_male"),
+    ("male-medium", "young_asian_male"),
+    ("male-dark", "young_african_male"),
+]
 GENDERS = ["female", "male"]
 LEVELS = ["min", "average", "max"]
 
@@ -79,6 +102,11 @@ def read_mhclo(path):
                 scales["xyz".index(w[0][0])] = (int(w[1]), int(w[2]), float(w[3]))
             elif w[0] == "verts":
                 in_verts = True
+            elif in_verts and not w[0][0].isdigit():
+                # mot-clé glissé dans le bloc des sommets (ex. « material ») : ignoré
+                if w[0] in ("delete_verts",):
+                    in_verts = False
+                continue
             elif in_verts:
                 if len(w) == 1 and w[0].isdigit():
                     refs.append([int(w[0])] * 3)
@@ -115,6 +143,7 @@ class Blob:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mh", required=True, help="dossier makehuman/data")
+    ap.add_argument("--assets", required=True, help="dossier du pack « MakeHuman system assets » (CC0)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "frontend", "public", "avatar"))
     args = ap.parse_args()
     MH = args.mh
@@ -129,6 +158,18 @@ def main():
     eye_refs, eye_w, eye_off, eye_scales = read_mhclo(os.path.join(MH, "eyes", "high-poly", "high-poly.mhclo"))
     EV, EVT, efaces = read_obj(os.path.join(MH, "eyes", "high-poly", "high-poly.obj"))
 
+    # Vrais modèles 3D ajustés au corps (pack « MakeHuman system assets », CC0)
+    A = args.assets
+    proxy_src = {}
+    for pid, kind, folder in PROXIES:
+        d = os.path.join(A, folder)
+        mhclo = [f for f in os.listdir(d) if f.endswith(".mhclo")][0]
+        objf = [f for f in os.listdir(d) if f.endswith(".obj")][0]
+        refs, w, off, scales = read_mhclo(os.path.join(d, mhclo))
+        PV, PVT, pfaces = read_obj(os.path.join(d, objf))
+        n = len(PV)
+        proxy_src[pid] = (kind, d, refs[:n], w[:n], off[:n], scales, PVT, pfaces)
+
     # ---------------------------------------------------- sommets "CPU"
     # Corps + sommets d'aide nécessaires (articulations, ajustement des yeux).
     body_faces = faces["body"]
@@ -141,6 +182,10 @@ def main():
     needed.update(eye_refs.flatten().tolist())
     for s in eye_scales:
         if s:
+            needed.update(s[:2])
+    for kind, d, refs, w, off, scales, PVT, pfaces in proxy_src.values():
+        needed.update(refs.flatten().tolist())
+        for s in scales:
             needed.update(s[:2])
     cpu = sorted(needed)
     remap = -np.ones(NV, dtype=np.int64)
@@ -393,6 +438,107 @@ def main():
     img = Image.open(os.path.join(MH, "eyes", "materials", "brown_eye.png")).convert("RGBA")
     img.resize((512, 512), Image.LANCZOS).save(os.path.join(args.out, "eye.png"), optimize=True)
 
+    S = {}
+    # ---------------------------------------------------- vrais modèles (cheveux, sourcils, cils)
+    proxy_meta = {}
+    tex_dir = os.path.join(args.out, "textures")
+    os.makedirs(tex_dir, exist_ok=True)
+    for pid, (kind, d, refs, w, off, scales, PVT, pfaces) in proxy_src.items():
+        pairs, pos_idx, uvs, ptris = {}, [], [], []
+        for flist in pfaces.values():
+            for f in flist:
+                ids = []
+                for vi, ti in f:
+                    k = (vi, ti)
+                    if k not in pairs:
+                        pairs[k] = len(pos_idx)
+                        pos_idx.append(vi)
+                        uvs.append(PVT[ti] if ti >= 0 else (0.0, 0.0))
+                    ids.append(pairs[k])
+                ptris.append(ids[:3])
+                if len(ids) == 4:
+                    ptris.append([ids[0], ids[2], ids[3]])
+        pos_idx = np.array(pos_idx)
+        p_refs = remap[refs[pos_idx]]
+        assert (p_refs >= 0).all(), pid
+        p_w = w[pos_idx]
+        p_off = off[pos_idx]
+        # poids de peau : mélange de ceux des 3 sommets de référence
+        si = np.zeros((len(pos_idx), 4), dtype=np.uint8)
+        sw = np.zeros((len(pos_idx), 4), dtype=np.uint8)
+        for i in range(len(pos_idx)):
+            acc = collections.defaultdict(float)
+            for j in range(3):
+                bw = p_w[i, j]
+                if bw <= 0:
+                    continue
+                for wt, b in per_vert.get(int(refs[pos_idx[i], j]), [(1.0, head_bone)]):
+                    acc[b] += wt * bw
+            top4 = sorted(((v, b) for b, v in acc.items()), reverse=True)[:4] or [(1.0, head_bone)]
+            ws = np.array([v for v, _ in top4])
+            ws = ws / ws.sum()
+            q = np.floor(ws * 255).astype(int)
+            q[0] += 255 - q.sum()
+            for k, (v, b) in enumerate(top4):
+                si[i, k] = b
+                sw[i, k] = q[k]
+        pre = "p_" + pid + "_"
+        S[pre + "refs"] = blob.add(pre + "refs", p_refs, np.uint16)
+        S[pre + "w"] = blob.add(pre + "w", p_w.astype(np.float32), np.float32)
+        S[pre + "off"] = blob.add(pre + "off", p_off.astype(np.float32), np.float32)
+        S[pre + "uv"] = blob.add(pre + "uv", np.array(uvs, dtype=np.float32), np.float32)
+        S[pre + "index"] = blob.add(pre + "index", np.array(ptris), np.uint16 if len(pos_idx) < 65536 else np.uint32)
+        S[pre + "si"] = blob.add(pre + "si", si, np.uint8)
+        S[pre + "sw"] = blob.add(pre + "sw", sw, np.uint8)
+        # texture : niveaux de gris normalisés (teintée dans le navigateur) + transparence
+        png = sorted(f for f in os.listdir(d) if f.endswith(".png") and "normal" not in f)[0]
+        img = Image.open(os.path.join(d, png)).convert("RGBA")
+        size = 1024 if kind == "hair" else 512
+        img = img.resize((size, size), Image.LANCZOS)
+        arr = np.asarray(img).astype(np.float32)
+        lum = arr[..., :3] @ np.array([0.299, 0.587, 0.114])
+        alpha = arr[..., 3] / 255.0
+        mask = alpha > 0.5
+        ref = np.percentile(lum[mask], 92) if mask.any() else 255
+        lum = np.clip(lum / max(ref, 1), 0, 1)
+        # Les zones transparentes des textures d'origine sont souvent blanches :
+        # on y propage la couleur des mèches voisines (sinon liseré clair au bord).
+        wimg = Image.fromarray((alpha * 255).astype(np.uint8))
+        limg = Image.fromarray((lum * alpha * 255).astype(np.uint8))
+        bl = np.zeros_like(lum)
+        bw = np.zeros_like(lum)
+        for r in (2, 6, 16):
+            bl += np.asarray(limg.filter(ImageFilter.GaussianBlur(r)), dtype=np.float32) / 255.0
+            bw += np.asarray(wimg.filter(ImageFilter.GaussianBlur(r)), dtype=np.float32) / 255.0
+        fill = np.where(bw > 1e-3, bl / np.maximum(bw, 1e-3), 0.6)
+        lum = np.where(alpha > 0.9, lum, fill)
+        # contraste adouci : les cheveux clairs ne deviennent pas tachetés
+        g = np.clip((0.35 + 0.65 * lum ** 0.75) * 235, 0, 255)
+        out = np.dstack([g, g, g, arr[..., 3]]).astype(np.uint8)
+        Image.fromarray(out, "RGBA").save(os.path.join(tex_dir, pid + ".webp"), quality=88, method=6)
+        proxy_meta[pid] = {"kind": kind, "count": int(len(pos_idx)), "tris": int(len(ptris)),
+                           "scales": [[int(remap[s[0]]), int(remap[s[1]]), s[2]] for s in scales],
+                           "texture": "textures/" + pid + ".webp"}
+        print("modèle", pid, len(pos_idx), "sommets")
+
+    # ---------------------------------------------------- textures de peau (photos)
+    skins_meta = {}
+    sk_dir = os.path.join(args.out, "skins")
+    os.makedirs(sk_dir, exist_ok=True)
+    for sid, folder in SKINS:
+        d = os.path.join(A, "skins", folder)
+        png = [f for f in os.listdir(d) if f.endswith(".png")][0]
+        img = Image.open(os.path.join(d, png)).convert("RGB")
+        arr = np.asarray(img)
+        h, w = arr.shape[:2]
+        # couleur moyenne de la peau, mesurée aux coordonnées UV du corps
+        u = np.clip((render_uv[:, 0] * (w - 1)).astype(int), 0, w - 1)
+        v = np.clip(((1 - render_uv[:, 1]) * (h - 1)).astype(int), 0, h - 1)
+        mean = arr[v, u].astype(np.float64).mean(0) / 255.0
+        img.resize((2048, 2048), Image.LANCZOS).save(os.path.join(sk_dir, sid + ".jpg"), quality=86, optimize=True, progressive=True)
+        skins_meta[sid] = {"file": "skins/" + sid + ".jpg", "mean": [round(float(x), 4) for x in mean]}
+        print("peau", sid, np.round(mean, 3))
+
     # ---------------------------------------------------- écriture
     meta = {
         "format": "calquela-avatar", "version": 1, "units": "dm",
@@ -401,7 +547,6 @@ def main():
         "targets": tmeta, "bones": bone_meta, "jointNames": joint_names,
         "eye": {"count": int(len(eye_pos_idx)), "scales": e_scales},
     }
-    S = {}
     S["basePos"] = blob.add("basePos", V[cpu].astype(np.float32), np.float32)
     S["quads"] = blob.add("quads", cpu_quads, np.uint16)
     S["renderCpu"] = blob.add("renderCpu", render_cpu, np.uint16)
@@ -422,6 +567,8 @@ def main():
     S["eyeUv"] = blob.add("eyeUv", np.array(eye_uv, dtype=np.float32), np.float32)
     S["eyeIndex"] = blob.add("eyeIndex", np.array(eye_tris), np.uint16)
     S["eyeSide"] = blob.add("eyeSide", e_side, np.uint8)
+    meta["proxies"] = proxy_meta
+    meta["skins"] = skins_meta
     meta["sections"] = S
     with open(os.path.join(args.out, "avatar.bin"), "wb") as f:
         f.write(blob.buf)
