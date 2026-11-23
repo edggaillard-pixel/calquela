@@ -32,7 +32,23 @@ export const DEFAULT_SHAPE = {
   muscle: 0.5,
   proportions: 0.5,
   breast: 0.5,
+  // visage : origines (mélangées, 0 à 1), âge (0 = 25 ans, 1 ≈ 55 ans), traits (-1 à 1)
+  african: 0.34,
+  asian: 0.33,
+  caucasian: 0.33,
+  age: 0,
+  jaw: 0,
+  chin: 0,
+  noseWidth: 0,
+  noseLength: 0,
+  lips: 0,
+  cheekbones: 0,
+  faceFat: 0,
+  eyeSize: 0,
 };
+
+/** Clés de forme (tout ce qui déforme le maillage). */
+export const SHAPE_KEYS = Object.keys(DEFAULT_SHAPE);
 
 /**
  * Avatar paramétrique : refait dans le navigateur le calcul de MakeHuman
@@ -92,6 +108,20 @@ export class Avatar {
     if (data.proxies.eyebrows) this.getProxyMesh('eyebrows', this.eyebrowMaterial);
     if (data.proxies.eyelashes) this.getProxyMesh('eyelashes', this.eyelashMaterial);
 
+    // sous-vêtements féminins : vrais modèles (brassière et culotte), couleur au choix
+    this.clothMaterials = [];
+    for (const id of ['top_f', 'panties_f']) {
+      const p = data.proxies[id];
+      if (!p) continue;
+      // légèrement décollé de la peau pour que la peau ne transperce pas le tissu
+      const mat = Avatar.offsetMaterial({
+        color: 0x24232b, roughness: 0.8, metalness: 0,
+      }, 0.025);
+      this.clothMaterials.push(mat);
+      const m = this.getProxyMesh(id, mat);
+      m.castShadow = true;
+    }
+
     // Maillage de sélection (positions posées calculées sur le processeur)
     this.pickGeometry = new THREE.BufferGeometry();
     this.pickGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.nRender * 3), 3));
@@ -134,6 +164,8 @@ export class Avatar {
     g.setAttribute('position', new THREE.BufferAttribute(this.renderPos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(this.renderNormal, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
+    // les tatouages sont cuits dans le même espace UV que la peau
+    g.setAttribute('bakeUv', g.getAttribute('uv'));
     g.setAttribute('skinIndex', new THREE.Uint8BufferAttribute(d.skinIndex, 4));
     g.setAttribute('skinWeight', new THREE.Uint8BufferAttribute(d.skinWeight, 4, true));
     g.setAttribute('features', new THREE.Uint8BufferAttribute(d.features, 4, true));
@@ -249,7 +281,7 @@ export class Avatar {
   /** Crée un maillage qui réutilise les sommets du corps (sous-ensemble de faces). */
   createSubsetMesh(indexArray, material, name) {
     const g = new THREE.BufferGeometry();
-    for (const key of ['position', 'normal', 'uv', 'skinIndex', 'skinWeight', 'features', 'cloth']) {
+    for (const key of ['position', 'normal', 'uv', 'bakeUv', 'skinIndex', 'skinWeight', 'features', 'cloth']) {
       g.setAttribute(key, this.geometry.getAttribute(key));
     }
     g.setIndex(new THREE.BufferAttribute(indexArray, 1));
@@ -291,20 +323,32 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
   setUnderwearColor(hex) {
     this.briefsMaterial.color.set(hex);
     this.topMaterial.color.set(hex);
+    for (const m of this.clothMaterials || []) m.color.set(hex);
   }
 
   // ------------------------------------------------------------------ forme
   targetWeight(f, s) {
     const male = s.gender === 'male' ? 1 : 0;
-    const gv = f.gender === 'male' ? male : 1 - male;
+    const gv = f.gender ? (f.gender === 'male' ? male : 1 - male) : 1;
     if (gv === 0) return 0;
+    if (f.ethnic) {
+      const a = Math.max(0, s.african ?? 1 / 3);
+      const b = Math.max(0, s.asian ?? 1 / 3);
+      const c = Math.max(0, s.caucasian ?? 1 / 3);
+      const sum = a + b + c || 1;
+      return gv * ({ african: a, asian: b, caucasian: c }[f.ethnic] / sum);
+    }
+    if (f.slider === 'age') return gv * Math.max(0, Math.min(1, s.age || 0)) * 0.45;
+    if (f.slider) return gv * Math.max(0, f.sign * (s[f.slider] || 0));
     if (f.cup) return gv * levels(s.breast)[f.cup];
     if (f.proportions) {
       const p = levels(s.proportions);
       return gv * (f.proportions === 'ideal' ? p.max : p.min);
     }
     if (f.height) return gv * levels(s.weight)[f.weight] * levels(s.height)[f.height];
-    return gv * levels(s.muscle)[f.muscle] * levels(s.weight)[f.weight];
+    // musculature maximale un peu accentuée : muscles plus dessinés en haut du curseur
+    const boost = f.muscle === 'max' ? 1.3 : 1;
+    return gv * levels(s.muscle)[f.muscle] * boost * levels(s.weight)[f.weight];
   }
 
   setShape(shape) {
@@ -341,7 +385,12 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
     this.geometry.attributes.normal.needsUpdate = true;
     this.geometry.computeBoundingSphere();
 
-    this.top.visible = this.shape.gender === 'female';
+    const female = this.shape.gender === 'female';
+    const modeled = !!this.proxyMeshes?.top_f;
+    this.top.visible = female && !modeled;
+    this.briefs.visible = !(female && modeled);
+    if (this.proxyMeshes?.top_f) this.proxyMeshes.top_f.visible = female;
+    if (this.proxyMeshes?.panties_f) this.proxyMeshes.panties_f.visible = female;
     this._fitEyes();
     this._fitProxies();
     if (this.skinTone) this.setSkin(this.skinTone);
@@ -380,6 +429,7 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
     m.name = id;
     m.frustumCulled = false;
     m.castShadow = p.kind === 'hair';
+    m.userData.noAO = p.kind !== 'cloth';
     this.group.add(m);
     this.group.updateMatrixWorld(true);
     m.bind(this.skeleton, this.body.bindMatrix);
@@ -404,7 +454,36 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
     }
     m.geometry.attributes.position.needsUpdate = true;
     m.geometry.computeVertexNormals();
+    this._weldNormals(id, m.geometry);
     m.geometry.computeBoundingSphere();
+  }
+
+  /**
+   * Les sommets dupliqués le long des coutures de texture reçoivent la même
+   * normale : sinon, en décalant le tissu le long des normales, les coutures
+   * s'ouvrent et laissent voir la peau.
+   */
+  _weldNormals(id, geometry) {
+    const p = this.data.proxies[id];
+    if (!this._welds) this._welds = {};
+    if (!this._welds[id]) {
+      const groups = new Map();
+      for (let i = 0; i < p.count; i++) {
+        const key = [p.refs[i * 3], p.refs[i * 3 + 1], p.refs[i * 3 + 2],
+          p.weights[i * 3].toFixed(4), p.offsets[i * 3].toFixed(4), p.offsets[i * 3 + 1].toFixed(4)].join('|');
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(i);
+      }
+      this._welds[id] = [...groups.values()].filter((g) => g.length > 1);
+    }
+    const n = geometry.attributes.normal.array;
+    for (const g of this._welds[id]) {
+      let x = 0, y = 0, z = 0;
+      for (const i of g) { x += n[i * 3]; y += n[i * 3 + 1]; z += n[i * 3 + 2]; }
+      const l = Math.hypot(x, y, z) || 1;
+      for (const i of g) { n[i * 3] = x / l; n[i * 3 + 1] = y / l; n[i * 3 + 2] = z / l; }
+    }
+    geometry.attributes.normal.needsUpdate = true;
   }
 
   _fitProxies() {
@@ -434,6 +513,15 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
     const map = this.loadTexture(skin.file);
     if (mat.map !== map) {
       mat.map = map;
+      // relief (pores, plis) et brillance tirés de la même photo
+      if (skin.normal) {
+        mat.normalMap = this.loadTexture(skin.normal, false);
+        mat.normalScale.set(0.85, 0.85);
+      }
+      if (skin.rough) {
+        mat.roughnessMap = this.loadTexture(skin.rough, false);
+        mat.roughness = 1;
+      }
       mat.needsUpdate = true;
     }
     // facteur de correction : teint demandé / teint moyen de la photo
@@ -441,6 +529,13 @@ vCloth = ${channel === 0 ? 'cloth.x' : channel === 1 ? 'cloth.y' : '1.0'};`);
     const clamp = (v) => Math.min(1.8, Math.max(0.45, v));
     mat.color.setRGB(clamp(target.r / mean.r), clamp(target.g / mean.g), clamp(target.b / mean.b));
     mat.userData.uniforms.uTextured.value = 1;
+  }
+
+  /** Couleur des yeux (textures d'iris du pack MakeHuman). */
+  setEyeColor(name) {
+    if (!this.data.meta.eyeColors?.includes(name)) return;
+    this.eyes.material.map = this.loadTexture(`eyes/${name}.png`);
+    this.eyes.material.needsUpdate = true;
   }
 
   _fitEyes() {

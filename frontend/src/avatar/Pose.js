@@ -111,8 +111,12 @@ export function computePoseQuaternions(avatar, pose) {
     const qFwd = rotateToward(d1, Z, arm.forward);
     // rotation du bras sur lui-même : oriente le pli du coude
     const d2 = d1.clone().applyQuaternion(qFwd);
-    const qTwist = new THREE.Quaternion().setFromAxisAngle(d2, (arm.twist || 0) * DEG * outward);
+    // la torsion est répartie le long du bras (30 % à l'épaule, 70 % au milieu du bras),
+    // comme sur un vrai squelette : l'épaule ne s'écrase pas
+    const twist = (arm.twist || 0) * DEG * outward;
+    const qTwist = new THREE.Quaternion().setFromAxisAngle(d2, twist * 0.3);
     out['upperarm01.' + side] = qTwist.multiply(qFwd).multiply(qRaise);
+    out['upperarm02.' + side] = new THREE.Quaternion().setFromAxisAngle(d, twist * 0.7);
 
     // Coude : rotation dans le plan du pli existant
     const restBend = bendAngle(d, f);

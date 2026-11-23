@@ -14,6 +14,14 @@ export const SKIN_TONES = [
   { label: 'Très foncé', hex: '#3e261a' },
 ];
 
+export const EYE_COLORS = [
+  { label: 'Marron', id: 'brownlight', hex: '#7a5532' },
+  { label: 'Vert', id: 'green', hex: '#5d7a3f' },
+  { label: 'Bleu-vert', id: 'bluegreen', hex: '#4f7f80' },
+  { label: 'Bleu', id: 'blue', hex: '#4a6fa8' },
+  { label: 'Gris', id: 'grey', hex: '#7d8790' },
+];
+
 export const UNDERWEAR_COLORS = [
   { label: 'Noir', hex: '#24232b' },
   { label: 'Blanc', hex: '#e9e8e4' },
@@ -28,12 +36,26 @@ export function defaultState() {
     version: FORMAT_VERSION,
     name: 'Sans titre',
     avatar: {
+      model: 'custom', // 'custom' (sur mesure) ou identifiant d'un personnage de la galerie
       gender: 'male',
       height: 0.5,
       weight: 0.5,
       muscle: 0.5,
       proportions: 0.5,
       breast: 0.5,
+      african: 0.34,
+      asian: 0.33,
+      caucasian: 0.33,
+      age: 0,
+      jaw: 0,
+      chin: 0,
+      noseWidth: 0,
+      noseLength: 0,
+      lips: 0,
+      cheekbones: 0,
+      faceFat: 0,
+      eyeSize: 0,
+      eyes: 'brownlight',
       skin: '#c99a7c',
       underwear: '#24232b',
     },
@@ -64,6 +86,8 @@ export function parseProject(text) {
   }
   if (!data || data.app !== APP_ID) throw new Error("Ce fichier n'est pas un projet CalqueLa.");
   const base = defaultState();
+  if (data.avatar && typeof data.avatar.model !== 'string') delete data.avatar.model;
+  if (data.avatar?.model && !/^[A-Za-z0-9_]{1,40}$/.test(data.avatar.model)) data.avatar.model = 'custom';
   const state = {
     ...base,
     name: typeof data.name === 'string' ? data.name.slice(0, 80) : base.name,

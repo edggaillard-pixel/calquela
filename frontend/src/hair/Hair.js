@@ -49,6 +49,7 @@ export class Hair {
     this.capMaterial = Avatar.offsetMaterial({ color: 0xffffff, roughness: 0.9 }, 0.02);
     this.cap = avatar.createSubsetMesh(avatar.data.scalp, this.capMaterial, 'calotte');
     this.cap.bind(avatar.skeleton, avatar.body.bindMatrix);
+    this.cap.userData.noAO = true;
     avatar.group.add(this.cap);
     avatar.skinnedMeshes.push(this.cap);
     this._apply();

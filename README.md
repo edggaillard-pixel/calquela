@@ -10,6 +10,11 @@ Essayez un tatouage avant de passer sous l'aiguille. CalqueLa est une applicatio
 
 ## Fonctionnalités
 
+- **Deux façons de choisir son modèle** :
+  - une galerie de 6 vrais personnages 3D existants (bibliothèque Microsoft Rocketbox), en maillot de bain ou habillés ;
+  - un corps « sur mesure » entièrement réglable avec les curseurs.
+
+  Les tatouages, les poses et l'export marchent sur les deux.
 - **Avatar 3D réaliste** : homme ou femme, avec des curseurs pour la taille, la corpulence, la musculature, les proportions et la poitrine. On peut aussi choisir le teint et la couleur des sous-vêtements.
 - **Peau et visage réalistes** : textures de peau photographiques (homme et femme, trois carnations, ajustées au teint choisi), vrais sourcils et cils modélisés.
 - **Cheveux** : 9 coupes modélisées (très court, court, mi-court, carré, longs, queue de cheval, tresse, afro, rasé), ajustées au crâne et teintables dans n'importe quelle couleur.
@@ -74,7 +79,8 @@ calquela/
 │       ├── state/          historique, format de projet, partage
 │       ├── ui/             panneaux, import, composants
 │       └── export/         images PNG
-└── tools/build_avatar.py   conversion des données MakeHuman en avatar.bin
+├── tools/build_avatar.py   conversion des données MakeHuman en avatar.bin
+└── tools/build_rocketbox.py  préparation des personnages de la galerie (FBX + textures)
 ```
 
 ### Points techniques
@@ -105,6 +111,11 @@ Réglages dans `backend/src/main/resources/application.properties` (préfixe `ca
   git clone --depth 1 https://github.com/makehumancommunity/makehuman
   # + télécharger et dézipper le pack « MakeHuman system assets »
   python3 tools/build_avatar.py --mh makehuman/makehuman/data --assets chemin/vers/le/pack
+  ```
+- Personnages de la galerie : [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox), **licence MIT** (© Microsoft Corporation). Textures converties et réduites par `tools/build_rocketbox.py` :
+  ```bash
+  git clone --depth 1 https://github.com/microsoft/Microsoft-Rocketbox
+  python3 tools/build_rocketbox.py --src Microsoft-Rocketbox/Assets/Avatars
   ```
 - [Three.js](https://threejs.org) et [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) : licence MIT.
 - Les motifs importés restent la propriété de leurs auteurs. Demandez l'accord de l'artiste avant de partager un projet qui contient son dessin.

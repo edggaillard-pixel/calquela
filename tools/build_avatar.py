@@ -39,7 +39,22 @@ PROXIES = [
     ("ponytail01", "hair", "hair/ponytail01"),
     ("braid01", "hair", "hair/braid01"),
     ("afro01", "hair", "hair/afro01"),
+    ("top_f", "cloth", "clothes/wolgade_female_top_01"),
+    ("panties_f", "cloth", "clothes/wolgade_female_panties_01"),
 ]
+# Traits du visage (cibles MakeHuman, CC0) : {} = incr ou decr
+FACE_SLIDERS = [
+    ("jaw", ["chin/chin-width-{}.target"]),
+    ("chin", ["chin/chin-prominent-{}.target"]),
+    ("noseWidth", ["nose/nose-scale-horiz-{}.target"]),
+    ("noseLength", ["nose/nose-scale-vert-{}.target"]),
+    ("lips", ["mouth/mouth-upperlip-volume-{}.target", "mouth/mouth-lowerlip-volume-{}.target"]),
+    ("cheekbones", ["cheek/l-cheek-bones-{}.target", "cheek/r-cheek-bones-{}.target"]),
+    ("faceFat", ["head/head-fat-{}.target"]),
+    ("eyeSize", ["eyes/l-eye-scale-{}.target", "eyes/r-eye-scale-{}.target"]),
+]
+# Couleurs d'yeux (CC0)
+EYE_COLORS = ["brownlight", "green", "bluegreen", "blue", "grey"]
 # Textures de peau photographiques (CC0)
 SKINS = [
     ("female-light", "young_caucasian_female"),
@@ -223,12 +238,21 @@ def main():
         return read_target(os.path.join(T, rel), NV)
 
     targets = []  # (nom, facteurs, dense)
+    ETHNIC = ("african", "asian", "caucasian")
     for g in GENDERS:
-        eth = sum(tgt(f"macrodetails/{r}-{g}-{AGE}.target") for r in ("african", "asian", "caucasian")) / 3.0
         for m in LEVELS:
             for w in LEVELS:
-                d = tgt(f"macrodetails/universal-{g}-{AGE}-{m}muscle-{w}weight.target") + eth
+                d = tgt(f"macrodetails/universal-{g}-{AGE}-{m}muscle-{w}weight.target")
                 targets.append((f"universal-{g}-{m}-{w}", {"gender": g, "muscle": m, "weight": w}, d))
+        # origines : trois cibles séparées, mélangées par les curseurs du visage
+        for r in ETHNIC:
+            targets.append((f"ethnic-{g}-{r}", {"gender": g, "ethnic": r}, tgt(f"macrodetails/{r}-{g}-{AGE}.target")))
+        # âge : écart entre le corps jeune et le corps âgé (le curseur en prend une fraction)
+        old = tgt(f"macrodetails/universal-{g}-old-averagemuscle-averageweight.target") + \
+            sum(tgt(f"macrodetails/{r}-{g}-old.target") for r in ETHNIC) / 3.0
+        young = tgt(f"macrodetails/universal-{g}-{AGE}-averagemuscle-averageweight.target") + \
+            sum(tgt(f"macrodetails/{r}-{g}-{AGE}.target") for r in ETHNIC) / 3.0
+        targets.append((f"age-{g}", {"gender": g, "slider": "age", "sign": 1}, old - young))
         # taille : on garde la musculature moyenne (approximation légère)
         for w in LEVELS:
             for h in ("min", "max"):
@@ -237,6 +261,11 @@ def main():
         for p in ("uncommon", "ideal"):
             d = tgt(f"macrodetails/proportions/{g}-{AGE}-averagemuscle-averageweight-{p}proportions.target")
             targets.append((f"proportions-{g}-{p}", {"gender": g, "proportions": p}, d))
+    # traits du visage : curseurs de -1 à 1 (cible « decr » d'un côté, « incr » de l'autre)
+    for slider, files in FACE_SLIDERS:
+        for sign, suffix in ((1, "incr"), (-1, "decr")):
+            d = sum(tgt(f.format(suffix)) for f in files)
+            targets.append((f"face-{slider}-{suffix}", {"slider": slider, "sign": sign}, d))
     for c in ("min", "max"):
         d = tgt(f"breast/female-{AGE}-averagemuscle-averageweight-{c}cup-averagefirmness.target")
         targets.append((f"breast-female-{c}", {"gender": "female", "cup": c}, d))
@@ -435,8 +464,13 @@ def main():
     e_side = (e_center[:, 0] > 0).astype(np.uint8)
 
     # la cornée utilise une zone transparente de la texture : on garde l'alpha
-    img = Image.open(os.path.join(MH, "eyes", "materials", "brown_eye.png")).convert("RGBA")
+    img = Image.open(os.path.join(args.assets, "eyes", "materials", "brownlight_eye.png")).convert("RGBA")
     img.resize((512, 512), Image.LANCZOS).save(os.path.join(args.out, "eye.png"), optimize=True)
+    eye_dir = os.path.join(args.out, "eyes")
+    os.makedirs(eye_dir, exist_ok=True)
+    for c in EYE_COLORS:
+        im = Image.open(os.path.join(args.assets, "eyes", "materials", c + "_eye.png")).convert("RGBA")
+        im.resize((512, 512), Image.LANCZOS).save(os.path.join(eye_dir, c + ".png"), optimize=True)
 
     S = {}
     # ---------------------------------------------------- vrais modèles (cheveux, sourcils, cils)
@@ -490,6 +524,22 @@ def main():
         S[pre + "index"] = blob.add(pre + "index", np.array(ptris), np.uint16 if len(pos_idx) < 65536 else np.uint32)
         S[pre + "si"] = blob.add(pre + "si", si, np.uint8)
         S[pre + "sw"] = blob.add(pre + "sw", sw, np.uint8)
+        if kind == "cloth":
+            # tissu : couleur unie choisie dans le site + relief du tissage (carte de relief d'origine)
+            bump = [f for f in os.listdir(d) if f.endswith("_bump.png")][0]
+            b = Image.open(os.path.join(d, bump)).convert("L").resize((1024, 1024), Image.LANCZOS)
+            h = np.asarray(b, dtype=np.float32) / 255.0
+            gx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
+            gy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
+            nx, ny, nz = -gx * 3, gy * 3, np.ones_like(gx)
+            ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+            nrm = np.dstack([nx / ln, ny / ln, nz / ln]) * 0.5 + 0.5
+            Image.fromarray((nrm * 255).astype(np.uint8)).save(os.path.join(tex_dir, pid + "_normal.jpg"), quality=88)
+            proxy_meta[pid] = {"kind": kind, "count": int(len(pos_idx)), "tris": int(len(ptris)),
+                               "scales": [[int(remap[s[0]]), int(remap[s[1]]), s[2]] for s in scales],
+                               "normal": "textures/" + pid + "_normal.jpg"}
+            print("modèle", pid, len(pos_idx), "sommets")
+            continue
         # texture : niveaux de gris normalisés (teintée dans le navigateur) + transparence
         png = sorted(f for f in os.listdir(d) if f.endswith(".png") and "normal" not in f)[0]
         img = Image.open(os.path.join(d, png)).convert("RGBA")
@@ -535,8 +585,29 @@ def main():
         u = np.clip((render_uv[:, 0] * (w - 1)).astype(int), 0, w - 1)
         v = np.clip(((1 - render_uv[:, 1]) * (h - 1)).astype(int), 0, h - 1)
         mean = arr[v, u].astype(np.float64).mean(0) / 255.0
-        img.resize((2048, 2048), Image.LANCZOS).save(os.path.join(sk_dir, sid + ".jpg"), quality=86, optimize=True, progressive=True)
-        skins_meta[sid] = {"file": "skins/" + sid + ".jpg", "mean": [round(float(x), 4) for x in mean]}
+        img = img.resize((2048, 2048), Image.LANCZOS)
+        img.save(os.path.join(sk_dir, sid + ".jpg"), quality=86, optimize=True, progressive=True)
+        # Relief de la peau (pores, rides, plis) déduit des détails fins de la photo :
+        # zones plus sombres = creux. On ne garde que les hautes fréquences.
+        L = np.asarray(img.convert("L"), dtype=np.float32) / 255.0
+        Limg = Image.fromarray((L * 255).astype(np.uint8))
+        low = np.asarray(Limg.filter(ImageFilter.GaussianBlur(6)), dtype=np.float32) / 255.0
+        mid = np.asarray(Limg.filter(ImageFilter.GaussianBlur(1.2)), dtype=np.float32) / 255.0
+        hgt = np.clip(mid - low, -0.12, 0.12)
+        gx = np.roll(hgt, -1, 1) - np.roll(hgt, 1, 1)
+        gy = np.roll(hgt, -1, 0) - np.roll(hgt, 1, 0)
+        k = 9.0
+        nx, ny, nz = -gx * k, gy * k, np.ones_like(gx)
+        ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+        nrm = np.dstack([nx / ln, ny / ln, nz / ln]) * 0.5 + 0.5
+        Image.fromarray((nrm * 255).astype(np.uint8)).save(os.path.join(sk_dir, sid + "_normal.jpg"), quality=90, optimize=True)
+        # Brillance : la peau est plus mate dans les creux, plus brillante sur les reliefs
+        rough = np.clip(0.55 - (mid - low) * 1.5, 0.35, 0.75)
+        rimg = np.dstack([rough, rough, rough])
+        Image.fromarray((rimg * 255).astype(np.uint8)).resize((1024, 1024), Image.LANCZOS).save(
+            os.path.join(sk_dir, sid + "_rough.jpg"), quality=85, optimize=True)
+        skins_meta[sid] = {"file": "skins/" + sid + ".jpg", "normal": "skins/" + sid + "_normal.jpg",
+                           "rough": "skins/" + sid + "_rough.jpg", "mean": [round(float(x), 4) for x in mean]}
         print("peau", sid, np.round(mean, 3))
 
     # ---------------------------------------------------- écriture
@@ -567,6 +638,8 @@ def main():
     S["eyeUv"] = blob.add("eyeUv", np.array(eye_uv, dtype=np.float32), np.float32)
     S["eyeIndex"] = blob.add("eyeIndex", np.array(eye_tris), np.uint16)
     S["eyeSide"] = blob.add("eyeSide", e_side, np.uint8)
+    meta["eyeColors"] = EYE_COLORS
+    meta["faceSliders"] = [f for f, _ in FACE_SLIDERS]
     meta["proxies"] = proxy_meta
     meta["skins"] = skins_meta
     meta["sections"] = S

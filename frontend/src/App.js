@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { Viewer } from './core/Viewer.js';
 import { loadAvatarData } from './avatar/AvatarData.js';
-import { Avatar } from './avatar/Avatar.js';
+import { Avatar, DEFAULT_SHAPE, SHAPE_KEYS } from './avatar/Avatar.js';
 import { Hair } from './hair/Hair.js';
+import { ScanAvatar } from './avatar/ScanAvatar.js';
 import { TattooBaker } from './tattoo/TattooBaker.js';
 import { ImageLibrary, computeFrame, createTattoo, hitsImage, localCoords, newId } from './tattoo/Tattoos.js';
 import { Interaction } from './tattoo/Interaction.js';
 import { History } from './state/History.js';
 import { defaultState, parseProject, serializeProject } from './state/Project.js';
+
+/** Les personnages de la galerie ont leurs propres cheveux : rien à générer. */
+const NO_HAIR = { setStyle() {} };
 
 const AUTOSAVE_KEY = 'calquela:projet-en-cours';
 
@@ -34,15 +38,74 @@ export class App {
     this.baker = new TattooBaker(this.viewer.renderer);
     onProgress?.('Chargement de l’avatar…');
     const data = await loadAvatarData('./avatar/');
-    this.avatar = new Avatar(data, { tattooMap: this.baker.texture, overlayMap: this.baker.overlayTexture });
+    const maps = { tattooMap: this.baker.texture, overlayMap: this.baker.overlayTexture };
+    this._maps = maps;
+    this.custom = new Avatar(data, maps);
+    this.customHair = new Hair(this.custom);
+    this.avatar = this.custom;
+    this.hair = this.customHair;
+    this.modelId = 'custom';
+    this.scans = new Map();
     this.baker.setGeometry(this.avatar.geometry);
     this.viewer.scene.add(this.avatar.group);
-    this.hair = new Hair(this.avatar);
     this.interaction = new Interaction({ viewer: this.viewer, avatar: this.avatar, container: this.viewport, app: this });
     this.viewer.beforeRender.add(() => this._flush());
-    this.avatar.onChange((kind) => {
+    this.custom.onChange((kind) => {
       if (kind === 'shape' || kind === 'pose') this._outlineNeeded = true;
     });
+    try {
+      const res = await fetch('./models/index.json');
+      this.gallery = res.ok ? (await res.json()).characters : [];
+    } catch {
+      this.gallery = [];
+    }
+  }
+
+  // ------------------------------------------------------------- personnages
+  /** Affiche le corps sur mesure ('custom') ou un personnage de la galerie. */
+  async _showModel(id) {
+    if (id !== 'custom' && !this.gallery.some((c) => c.id === id)) id = 'custom';
+    if (id === this.modelId) return;
+    let next;
+    if (id === 'custom') {
+      next = this.custom;
+    } else {
+      next = this.scans.get(id);
+      if (!next) {
+        this.emit('model-loading');
+        const entry = this.gallery.find((c) => c.id === id);
+        next = await ScanAvatar.load(entry, this._maps);
+        next.onChange((kind) => {
+          if (kind === 'pose') this._outlineNeeded = true;
+        });
+        this.scans.set(id, next);
+      }
+    }
+    this.viewer.scene.remove(this.avatar.group);
+    this.avatar = next;
+    this.hair = id === 'custom' ? this.customHair : NO_HAIR;
+    this.modelId = id;
+    this.viewer.scene.add(next.group);
+    this.baker.setGeometry(next.geometry);
+    this.interaction.avatar = next;
+    this.requestBake();
+  }
+
+  /** Choix d'un personnage par l'utilisateur. Les motifs posés sont retirés (annulable). */
+  async setModel(id) {
+    if (id === this.state.avatar.model) return;
+    await this._showModel(id);
+    const had = this.state.tattoos.length;
+    this.state.avatar.model = this.modelId;
+    this.state.tattoos = [];
+    this.selectedId = null;
+    if (this.modelId === 'custom') this._applyAvatar();
+    this.avatar.setPose(this.state.pose);
+    if (this.modelId === 'custom') this.hair.setStyle(this.state.hair);
+    this.requestBake();
+    this.emit('state');
+    this.commit();
+    return had;
   }
 
   // ------------------------------------------------------------- abonnements
@@ -66,9 +129,12 @@ export class App {
     const prevHair = JSON.stringify(this.state.hair);
     const prevGender = this.state.avatar.gender;
     this.state = state;
+    const modelChanged = (state.avatar.model || 'custom') !== this.modelId;
+    await this._showModel(state.avatar.model || 'custom');
+    state.avatar.model = this.modelId;
     this._applyAvatar();
     this.avatar.setPose(state.pose);
-    const hairChanged = JSON.stringify(state.hair) !== prevHair || state.avatar.gender !== prevGender || resetHistory;
+    const hairChanged = JSON.stringify(state.hair) !== prevHair || state.avatar.gender !== prevGender || resetHistory || modelChanged;
     if (hairChanged) this.hair.setStyle(state.hair);
     if (this.selectedId && !state.tattoos.some((t) => t.id === this.selectedId)) this.selectedId = null;
     this.requestBake();
@@ -78,8 +144,9 @@ export class App {
 
   _applyAvatar() {
     const a = this.state.avatar;
-    this.avatar.setShape({ gender: a.gender, height: a.height, weight: a.weight, muscle: a.muscle, proportions: a.proportions, breast: a.breast });
+    this.avatar.setShape(Object.fromEntries(SHAPE_KEYS.map((k) => [k, a[k] ?? DEFAULT_SHAPE[k]])));
     this.avatar.setSkin(a.skin);
+    this.avatar.setEyeColor(a.eyes);
     this.avatar.setUnderwearColor(a.underwear);
   }
 
@@ -89,8 +156,8 @@ export class App {
     Object.assign(this.state.avatar, patch);
     if ('skin' in patch) this.avatar.setSkin(patch.skin);
     if ('underwear' in patch) this.avatar.setUnderwearColor(patch.underwear);
-    const shapeKeys = ['gender', 'height', 'weight', 'muscle', 'proportions', 'breast'];
-    if (shapeKeys.some((k) => k in patch)) {
+    if ('eyes' in patch) this.avatar.setEyeColor(patch.eyes);
+    if (SHAPE_KEYS.some((k) => k in patch)) {
       this._applyAvatar();
       // la tête change peu : on régénère les cheveux à la fin du réglage
       if (genderChanged || !live) this._scheduleHair(genderChanged ? 0 : 60);

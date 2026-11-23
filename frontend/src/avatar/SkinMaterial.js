@@ -91,20 +91,36 @@ export function createSkinMaterial({ tattooMap, overlayMap }) {
     uOverlayColor: { value: new THREE.Color('#6b45ff') },
     uInk: { value: 0.94 },
     uTextured: { value: 0 },
+    // diffusion sous la peau : la lumière « déborde » plus loin pour le rouge que pour le bleu
+    uSssWrap: { value: new THREE.Vector3(0.55, 0.26, 0.16) },
   };
   mat.userData.uniforms = uniforms;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+    // éclairage « peau » : diffusion décalée par canal (approximation du subsurface scattering)
+    const diffuseLine = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );';
+    let chunk = THREE.ShaderChunk.lights_physical_pars_fragment;
+    if (chunk.includes(diffuseLine)) {
+      chunk = 'uniform vec3 uSssWrap;\n' + chunk.replace(diffuseLine, `{
+    float rawNL = dot( geometryNormal, directLight.direction );
+    vec3 sssNL = clamp( ( vec3( rawNL ) + uSssWrap ) / ( 1.0 + uSssWrap ), 0.0, 1.0 );
+    // un peu de rouge dans la zone de transition ombre / lumière
+    sssNL += vec3( 0.06, 0.012, 0.0 ) * ( 1.0 - abs( rawNL ) ) * step( -0.3, rawNL );
+    reflectedLight.directDiffuse += sssNL * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
+  }`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_pars_fragment>', chunk);
+    }
     shader.vertexShader = shader.vertexShader
       .replace(
         'void main() {',
         `attribute vec4 features;
+attribute vec2 bakeUv;
 varying vec4 vFeatures;
 varying vec2 vSkinUv;
 void main() {
   vFeatures = features;
-  vSkinUv = uv;`,
+  vSkinUv = bakeUv; // coordonnées de la texture des tatouages`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(

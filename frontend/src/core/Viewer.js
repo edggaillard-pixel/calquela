@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 const VIEWS = {
   face: { azimuth: 0, elevation: 0.04 },
@@ -27,14 +31,14 @@ export class Viewer {
     this.scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
+    this.scene.environmentIntensity = 0.45;
 
     this.camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
     this.camera.position.set(0, 1.0, 4.6);
 
     // Éclairage de studio : lumière principale douce + contre-jour
-    const key = new THREE.DirectionalLight(0xfffaf5, 2.2);
-    key.position.set(2.2, 3.6, 3.0);
+    const key = new THREE.DirectionalLight(0xfff6ee, 2.7);
+    key.position.set(2.7, 3.4, 2.1);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.left = -1.2;
@@ -47,10 +51,10 @@ export class Viewer {
     key.shadow.normalBias = 0.02;
     key.shadow.radius = 4;
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0xdfe6ff, 1.1);
+    const rim = new THREE.DirectionalLight(0xdfe6ff, 1.5);
     rim.position.set(-3, 2.5, -3);
     this.scene.add(rim);
-    const fill = new THREE.HemisphereLight(0xffffff, 0x9a948e, 0.45);
+    const fill = new THREE.HemisphereLight(0xf4f1ff, 0x8a7d72, 0.35);
     this.scene.add(fill);
     this.keyLight = key;
 
@@ -74,16 +78,63 @@ export class Viewer {
     this.tween = null;
     this.insets = { left: 0, right: 0 };
     this.beforeRender = new Set();
+    this._setupPostprocessing();
     this._resize = this._resize.bind(this);
     new ResizeObserver(this._resize).observe(container);
     this._resize();
     this.renderer.setAnimationLoop(() => this._frame());
   }
 
+  /**
+   * Ombres de contact (occlusion ambiante GTAO) : creuse les orbites, les plis,
+   * le dessous des muscles. Désactivé sur téléphone pour garder de la fluidité.
+   */
+  _setupPostprocessing() {
+    const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    this.useComposer = !mobile && this.renderer.capabilities.isWebGL2;
+    if (!this.useComposer) return;
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(this.renderer, rt);
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.aoPass = new GTAOPass(this.scene, this.camera, 1, 1);
+    this.aoPass.output = GTAOPass.OUTPUT.Default;
+    this.aoPass.blendIntensity = 0.85;
+    this.aoPass.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1.5, thickness: 0.6, scale: 1.4, samples: 16, distanceFallOff: 1 });
+    this.aoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+    // les cheveux, cils et sourcils (textures transparentes) ne doivent pas projeter d'occlusion
+    const hide = this.aoPass._overrideVisibility.bind(this.aoPass);
+    this.aoPass._overrideVisibility = () => {
+      hide();
+      this.scene.traverse((o) => {
+        if (o.userData.noAO && o.visible) {
+          o.visible = false;
+          this.aoPass._visibilityCache.push(o);
+        }
+      });
+    };
+    this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.aoPass);
+    this.composer.addPass(new OutputPass());
+  }
+
+  _render(camera = this.camera) {
+    if (this.useComposer) {
+      this.renderPass.camera = camera;
+      this.aoPass.camera = camera;
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, camera);
+    }
+  }
+
   _resize() {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
     this.camera.aspect = w / h;
     // garder tout le corps visible sur un écran étroit
     this.camera.fov = w / h < 0.75 ? 38 : 28;
@@ -110,7 +161,7 @@ export class Viewer {
     }
     this.controls.update();
     for (const fn of this.beforeRender) fn();
-    this.renderer.render(this.scene, this.camera);
+    this._render();
   }
 
   /** Déplace la caméra en douceur. */
@@ -162,18 +213,26 @@ export class Viewer {
     const oldAspect = camera.aspect;
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(width, height, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(1);
+      this.composer.setSize(width, height);
+    }
     const view = camera.view && camera.view.enabled ? { ...camera.view } : null;
     if (view) camera.clearViewOffset();
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     for (const fn of this.beforeRender) fn();
-    this.renderer.render(this.scene, camera);
+    this._render(camera);
     const out = document.createElement('canvas');
     out.width = width;
     out.height = height;
     out.getContext('2d').drawImage(this.canvas, 0, 0);
     this.renderer.setPixelRatio(oldRatio);
     this.renderer.setSize(oldSize.x, oldSize.y, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(oldRatio);
+      this.composer.setSize(oldSize.x, oldSize.y);
+    }
     camera.aspect = oldAspect;
     if (view) camera.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
     camera.updateProjectionMatrix();

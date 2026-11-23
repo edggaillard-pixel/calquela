@@ -1,5 +1,5 @@
 import { el, icon, iconButton, section, segmented, slider, swatches, toggle } from './controls.js';
-import { SKIN_TONES, UNDERWEAR_COLORS } from '../state/Project.js';
+import { EYE_COLORS, SKIN_TONES, UNDERWEAR_COLORS } from '../state/Project.js';
 import { HAIR_COLORS, HAIR_STYLES, Hair } from '../hair/Hair.js';
 import { POSE_PRESETS, clonePose } from '../avatar/Pose.js';
 
@@ -38,20 +38,102 @@ export function bodyPanel(app) {
   const muscle = mk('muscle', 'Musculature', words('Peu marquée', 'Moyenne', 'Athlétique'));
   const proportions = mk('proportions', 'Proportions', words('Atypiques', 'Courantes', 'Classiques'));
   const breast = mk('breast', 'Poitrine', words('Petite', 'Moyenne', 'Généreuse'));
+  // ---- visage
+  const mkFace = (key, label, low, high) =>
+    slider({
+      label, min: -1, max: 1, step: 0.01, value: a()[key] ?? 0,
+      format: (v) => (v < -0.15 ? low : v > 0.15 ? high : 'Moyen'),
+      onInput: (v) => app.setAvatar({ [key]: v }, true),
+      onCommit: (v) => app.setAvatar({ [key]: v }),
+    });
+  const mkOrigin = (key, label) =>
+    slider({
+      label, min: 0, max: 1, step: 0.01, value: a()[key] ?? 0.33, format: pct,
+      onInput: (v) => app.setAvatar({ [key]: v }, true),
+      onCommit: (v) => app.setAvatar({ [key]: v }),
+    });
+  const origins = { african: mkOrigin('african', 'Traits africains'), asian: mkOrigin('asian', 'Traits asiatiques'), caucasian: mkOrigin('caucasian', 'Traits européens') };
+  const age = slider({
+    label: 'Âge', min: 0, max: 1, step: 0.01, value: a().age ?? 0,
+    format: (v) => `${Math.round(25 + v * 30)} ans`,
+    onInput: (v) => app.setAvatar({ age: v }, true),
+    onCommit: (v) => app.setAvatar({ age: v }),
+  });
+  const face = {
+    jaw: mkFace('jaw', 'Mâchoire', 'Fine', 'Large'),
+    chin: mkFace('chin', 'Menton', 'Discret', 'Marqué'),
+    cheekbones: mkFace('cheekbones', 'Pommettes', 'Discrètes', 'Saillantes'),
+    faceFat: mkFace('faceFat', 'Joues', 'Creusées', 'Pleines'),
+    noseWidth: mkFace('noseWidth', 'Largeur du nez', 'Fin', 'Large'),
+    noseLength: mkFace('noseLength', 'Longueur du nez', 'Court', 'Long'),
+    lips: mkFace('lips', 'Lèvres', 'Fines', 'Pulpeuses'),
+    eyeSize: mkFace('eyeSize', 'Yeux', 'Petits', 'Grands'),
+  };
+  const eyeHex = (id) => (EYE_COLORS.find((e) => e.id === id) || EYE_COLORS[0]).hex;
+  const eyes = swatches({
+    label: 'Couleur des yeux', colors: EYE_COLORS, value: eyeHex(a().eyes),
+    onChange: (hex) => {
+      const e = EYE_COLORS.find((x) => x.hex.toLowerCase() === String(hex).toLowerCase());
+      if (e) app.setAvatar({ eyes: e.id });
+    },
+  });
+  eyes.querySelector('.swatch--custom')?.remove();
   const skin = swatches({ label: 'Teint', colors: SKIN_TONES, value: a().skin, onChange: (hex, live) => app.setAvatar({ skin: hex }, live) });
   const under = swatches({ label: 'Sous-vêtements', colors: UNDERWEAR_COLORS, value: a().underwear, onChange: (hex, live) => app.setAvatar({ underwear: hex }, live) });
 
-  const root = el('div', { class: 'panel-body' },
+  // ---- galerie : corps sur mesure ou personnage existant
+  const status = el('p', { class: 'hint', 'aria-live': 'polite' });
+  const card = (id, label, thumb) =>
+    el('button', {
+      type: 'button', class: 'model-card', role: 'radio', 'data-id': id, title: label,
+      onclick: async () => {
+        if (id === app.state.avatar.model) return;
+        status.textContent = 'Chargement du personnage…';
+        cards.forEach((c) => (c.disabled = true));
+        try {
+          const removed = await app.setModel(id);
+          status.textContent = removed ? `${removed} motif${removed > 1 ? 's' : ''} retiré${removed > 1 ? 's' : ''} (Ctrl+Z pour annuler).` : '';
+        } catch {
+          status.textContent = 'Impossible de charger ce personnage.';
+        } finally {
+          cards.forEach((c) => (c.disabled = false));
+        }
+      },
+    },
+    thumb ? el('img', { src: thumb, alt: '', loading: 'lazy', width: 72, height: 96 }) : el('span', { class: 'model-card__custom', 'aria-hidden': 'true' }, icon('body')),
+    el('span', { class: 'model-card__label' }, label));
+  const cards = [
+    card('custom', 'Sur mesure', null),
+    ...(app.gallery || []).map((c) => card(c.id, c.label, `./models/${c.id}/${c.files.thumb}`)),
+  ];
+  const gallery = el('div', { class: 'model-grid', role: 'radiogroup', 'aria-label': 'Personnage' }, ...cards);
+  const custom = [
     section('Silhouette', gender, height, weight, muscle, proportions, breast),
+    section('Visage', age, ...Object.values(face)),
+    section('Origines', el('p', { class: 'hint' }, 'Mélange des traits du visage et du corps.'), ...Object.values(origins)),
+    section('Yeux', eyes),
     section('Teint', skin),
     section('Sous-vêtements', under),
+  ];
+  const scanNote = el('p', { class: 'hint' }, 'Personnage existant : sa morphologie est fixe. Choisissez « Sur mesure » pour tout régler avec les curseurs.');
+  const root = el('div', { class: 'panel-body' },
+    section('Personnage', gallery, status, scanNote),
+    ...custom,
   );
   root.sync = () => {
+    const model = a().model || 'custom';
+    cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.id === model)));
+    custom.forEach((sec) => (sec.hidden = model !== 'custom'));
+    scanNote.hidden = model === 'custom';
     gender.set(a().gender);
     for (const [k, s] of Object.entries({ height, weight, muscle, proportions, breast })) s.set(a()[k]);
     breast.hidden = a().gender !== 'female';
     skin.set(a().skin);
     under.set(a().underwear);
+    age.set(a().age ?? 0);
+    for (const [k, s] of Object.entries(face)) s.set(a()[k] ?? 0);
+    for (const [k, s] of Object.entries(origins)) s.set(a()[k] ?? 0.33);
+    eyes.set(eyeHex(a().eyes));
   };
   return root;
 }
@@ -65,11 +147,13 @@ export function hairPanel(app) {
   );
   styles.append(...styleButtons);
   const colors = swatches({ label: 'Couleur', colors: HAIR_COLORS, value: h().color, onChange: (hex) => app.setHair({ color: hex }) });
-  const root = el('div', { class: 'panel-body' },
-    section('Coupe', styles),
-    section('Couleur', colors),
-  );
+  const sections = [section('Coupe', styles), section('Couleur', colors)];
+  const note = el('p', { class: 'hint' }, 'Ce personnage a sa propre coiffure. Les coupes se règlent sur le corps « Sur mesure ».');
+  const root = el('div', { class: 'panel-body' }, note, ...sections);
   root.sync = () => {
+    const scan = (app.state.avatar.model || 'custom') !== 'custom';
+    note.hidden = !scan;
+    sections.forEach((sec) => (sec.hidden = scan));
     const current = Hair.resolve(h().style).id;
     styleButtons.forEach((b, i) => b.setAttribute('aria-checked', String(HAIR_STYLES[i].id === current)));
     colors.set(h().color);

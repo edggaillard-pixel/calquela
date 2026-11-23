@@ -13,6 +13,7 @@ import * as THREE from 'three';
 
 const bakeVertex = /* glsl */ `
 in vec3 canon;
+in vec2 bakeUv;
 in vec3 canonNormal;
 in float region;
 out vec3 vP;
@@ -22,7 +23,7 @@ void main() {
   vP = canon;
   vN = canonNormal;
   vRegion = int(region + 0.5);
-  gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4(bakeUv * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 const bakeFragment = /* glsl */ `

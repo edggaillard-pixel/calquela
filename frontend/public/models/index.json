@@ -1,0 +1,92 @@
+{
+ "source": "Microsoft Rocketbox Avatar Library (MIT) — https://github.com/microsoft/Microsoft-Rocketbox",
+ "characters": [
+  {
+   "id": "Sports_Female_01",
+   "label": "Léa (maillot de bain)",
+   "gender": "female",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "thumb": "thumb.jpg"
+   }
+  },
+  {
+   "id": "Sports_Male_01",
+   "label": "Hugo (maillot de bain)",
+   "gender": "male",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "thumb": "thumb.jpg"
+   }
+  },
+  {
+   "id": "Sports_Female_02",
+   "label": "Inès (débardeur)",
+   "gender": "female",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "opacity": "opacity.webp",
+    "thumb": "thumb.jpg"
+   }
+  },
+  {
+   "id": "Sports_Male_04",
+   "label": "Karim (débardeur)",
+   "gender": "male",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "thumb": "thumb.jpg"
+   }
+  },
+  {
+   "id": "Male_Adult_01",
+   "label": "Tom (short)",
+   "gender": "male",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "opacity": "opacity.webp",
+    "thumb": "thumb.jpg"
+   }
+  },
+  {
+   "id": "Female_Adult_01",
+   "label": "Julie (chemisier)",
+   "gender": "female",
+   "files": {
+    "body": "body.jpg",
+    "body_n": "body_n.jpg",
+    "body_r": "body_r.jpg",
+    "head": "head.jpg",
+    "head_n": "head_n.jpg",
+    "head_r": "head_r.jpg",
+    "opacity": "opacity.webp",
+    "thumb": "thumb.jpg"
+   }
+  }
+ ]
+}
